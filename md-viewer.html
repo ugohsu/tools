@@ -437,22 +437,37 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 // ── Marked setup (plain) ──
 marked.use({ breaks: true, gfm: true });
 
-// ── Pre-process: replace mermaid/plantuml blocks BEFORE marked sees them ──
+// ── Pre-process: extract mermaid/plantuml blocks before marked, restore after ──
+// Two-pass approach: placeholder → marked.parse → replace placeholders with rendered HTML
+const _diagramStore = {};
+
 function preProcess(md) {
-  return md.replace(/^```(mermaid|plantuml)\r?\n([\s\S]*?)^```/gim, (_, lang, code) => {
-    lang = lang.toLowerCase();
-    code = code.trimEnd();
-    if (lang === 'mermaid') {
-      const id = 'mm-' + Math.random().toString(36).slice(2, 8);
-      return '<div class="diagram-wrap"><div class="diagram-label">Mermaid</div><div class="mermaid" id="' + id + '">' + esc(code) + '</div></div>\n';
+  _diagramStore._counter = 0;
+  // Replace each ```mermaid or ```plantuml block with a unique placeholder
+  // Use a non-greedy match that stops at the FIRST closing ``` on its own line
+  return md.replace(/^(`{3})(mermaid|plantuml)([ \t]*)(\r?\n)([\s\S]*?)^\1[ \t]*(\r?\n|$)/gm,
+    (_, fence, lang, _sp, _nl, code) => {
+      const key = '__DIAGRAM_' + (_diagramStore._counter++) + '__';
+      code = code.trimEnd();
+      lang = lang.toLowerCase();
+      if (lang === 'mermaid') {
+        const id = 'mm-' + Math.random().toString(36).slice(2, 8);
+        _diagramStore[key] = '<div class="diagram-wrap"><div class="diagram-label">Mermaid</div><div class="mermaid" id="' + id + '">' + esc(code) + '</div></div>';
+      } else {
+        const url = 'https://www.plantuml.com/plantuml/svg/' + encodePUML(code);
+        _diagramStore[key] = '<div class="diagram-wrap"><div class="diagram-label">PlantUML</div><img src="' + url + '" alt="PlantUML" loading="lazy"></div>';
+      }
+      return '\n' + key + '\n';
     }
-    if (lang === 'plantuml') {
-      const url = 'https://www.plantuml.com/plantuml/svg/' + encodePUML(code);
-      return '<div class="diagram-wrap"><div class="diagram-label">PlantUML</div><img src="' + url + '" alt="PlantUML" loading="lazy"></div>\n';
-    }
-    return _;
-  });
+  );
 }
+
+function postProcess(html) {
+  // Replace placeholder paragraphs <p>__DIAGRAM_N__</p> with actual diagram HTML
+  return html.replace(/<p>(__DIAGRAM_\d+__)<\/p>/g, (_, key) => _diagramStore[key] || '');
+}
+
+
 
 // PlantUML
 function encodePUML(src) {
@@ -476,7 +491,7 @@ const EMPTY_HTML = document.getElementById('empty-state').outerHTML;
 async function render() {
   const out = document.getElementById('output');
   if (!rawMd.trim()) { out.innerHTML = EMPTY_HTML; return; }
-  out.innerHTML = marked.parse(preProcess(rawMd));
+  out.innerHTML = postProcess(marked.parse(preProcess(rawMd)));
   renderMathInElement(out, {
     delimiters: [
       {left:'$$',right:'$$',display:true},
