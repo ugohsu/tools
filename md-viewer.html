@@ -434,28 +434,25 @@ let renderTimer = null;
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-// ── Marked setup ──
-// marked v12: renderer.code receives a token object {type,raw,text,lang,escaped}
-marked.use({
-  breaks: true,
-  gfm: true,
-  renderer: {
-    code(token) {
-      // token may be an object {text,lang} or (older compat) a plain string
-      const text = (token && token.text != null) ? token.text : String(token || '');
-      const lang = ((token && token.lang) ? token.lang : '').toLowerCase().trim();
-      if (lang === 'mermaid') {
-        const id = 'mm-' + Math.random().toString(36).slice(2, 8);
-        return `<div class="diagram-wrap"><div class="diagram-label">Mermaid</div><div class="mermaid" id="${id}">${esc(text)}</div></div>`;
-      }
-      if (lang === 'plantuml') {
-        const url = `https://www.plantuml.com/plantuml/svg/${encodePUML(text)}`;
-        return `<div class="diagram-wrap"><div class="diagram-label">PlantUML</div><img src="${url}" alt="PlantUML" loading="lazy"></div>`;
-      }
-      return `<pre><code>${esc(text)}</code></pre>`;
+// ── Marked setup (plain) ──
+marked.use({ breaks: true, gfm: true });
+
+// ── Pre-process: replace mermaid/plantuml blocks BEFORE marked sees them ──
+function preProcess(md) {
+  return md.replace(/^```(mermaid|plantuml)\r?\n([\s\S]*?)^```/gim, (_, lang, code) => {
+    lang = lang.toLowerCase();
+    code = code.trimEnd();
+    if (lang === 'mermaid') {
+      const id = 'mm-' + Math.random().toString(36).slice(2, 8);
+      return '<div class="diagram-wrap"><div class="diagram-label">Mermaid</div><div class="mermaid" id="' + id + '">' + esc(code) + '</div></div>\n';
     }
-  }
-});
+    if (lang === 'plantuml') {
+      const url = 'https://www.plantuml.com/plantuml/svg/' + encodePUML(code);
+      return '<div class="diagram-wrap"><div class="diagram-label">PlantUML</div><img src="' + url + '" alt="PlantUML" loading="lazy"></div>\n';
+    }
+    return _;
+  });
+}
 
 // PlantUML
 function encodePUML(src) {
@@ -479,7 +476,7 @@ const EMPTY_HTML = document.getElementById('empty-state').outerHTML;
 async function render() {
   const out = document.getElementById('output');
   if (!rawMd.trim()) { out.innerHTML = EMPTY_HTML; return; }
-  out.innerHTML = marked.parse(rawMd);
+  out.innerHTML = marked.parse(preProcess(rawMd));
   renderMathInElement(out, {
     delimiters: [
       {left:'$$',right:'$$',display:true},
