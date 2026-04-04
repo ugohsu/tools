@@ -447,7 +447,7 @@ function preProcess(md) {
   // Use a non-greedy match that stops at the FIRST closing ``` on its own line
   return md.replace(/^(`{3})(mermaid|plantuml)([ \t]*)(\r?\n)([\s\S]*?)^\1[ \t]*(\r?\n|$)/gm,
     (_, fence, lang, _sp, _nl, code) => {
-      const key = '__DIAGRAM_' + (_diagramStore._counter++) + '__';
+      const key = 'MERMAID-PLACEHOLDER-' + (_diagramStore._counter++);
       code = code.trimEnd();
       lang = lang.toLowerCase();
       if (lang === 'mermaid') {
@@ -457,14 +457,14 @@ function preProcess(md) {
         const url = 'https://www.plantuml.com/plantuml/svg/' + encodePUML(code);
         _diagramStore[key] = '<div class="diagram-wrap"><div class="diagram-label">PlantUML</div><img src="' + url + '" alt="PlantUML" loading="lazy"></div>';
       }
-      return '\n' + key + '\n';
+      return '\n\n<mermaid-placeholder id="' + key + '"></mermaid-placeholder>\n\n';
     }
   );
 }
 
 function postProcess(html) {
   // Replace placeholder paragraphs <p>__DIAGRAM_N__</p> with actual diagram HTML
-  return html.replace(/<p>(__DIAGRAM_\d+__)<\/p>/g, (_, key) => _diagramStore[key] || '');
+  return html.replace(/<mermaid-placeholder id="(MERMAID-PLACEHOLDER-\d+)"><\/mermaid-placeholder>/g, (_, key) => _diagramStore[key] || '');
 }
 
 
