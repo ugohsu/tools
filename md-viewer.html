@@ -491,9 +491,14 @@ function postProcess(html) {
 
 // PlantUML
 function encodePUML(src) {
-  const raw = unescape(encodeURIComponent('@startuml\n' + src + '\n@enduml'));
-  const comp = window.pako ? String.fromCharCode(...window.pako.deflateRaw(raw,{level:9})) : '~0'+raw;
-  return encode64(comp);
+  const utf8 = new TextEncoder().encode('@startuml\n' + src + '\n@enduml');
+  if (window.pako) {
+    const comp = window.pako.deflateRaw(utf8, {level: 9});
+    return encode64(String.fromCharCode(...comp));
+  } else {
+    // pako 未ロード時: 非圧縮フォールバック (~0 プレフィックス)
+    return '~0' + encode64(String.fromCharCode(...utf8));
+  }
 }
 function encode64(d) {
   const c='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_';
