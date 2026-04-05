@@ -340,6 +340,42 @@
   }
   .katex-display { overflow-x: auto; margin: 1.2em 0; }
 
+  /* ── Download toolbar ── */
+  .diagram-wrap { position: relative; }
+  .dl-toolbar {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    display: flex;
+    gap: 0.3rem;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .diagram-wrap:hover .dl-toolbar,
+  .katex-display-wrap:hover .dl-toolbar { opacity: 1; }
+  .dl-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 0.2rem 0.45rem;
+    background: var(--text);
+    color: var(--bg);
+    border: none;
+    border-radius: 2px;
+    cursor: pointer;
+    opacity: 0.75;
+    transition: opacity 0.12s;
+  }
+  .dl-btn:hover { opacity: 1; }
+
+  /* KaTeX display wrapper */
+  .katex-display-wrap {
+    position: relative;
+    margin: 1.2em 0;
+  }
+  .katex-display-wrap .katex-display { margin: 0; }
+
   /* ── Print ── */
   @media print {
     #left-panel, header { display: none !important; }
@@ -503,6 +539,120 @@ async function render() {
   });
   try { await mermaid.run({ nodes: out.querySelectorAll('.mermaid') }); }
   catch(e){ console.warn('Mermaid:', e); }
+
+  // Add download toolbars
+  addMermaidToolbars(out);
+  addKatexToolbars(out);
+}
+
+function addMermaidToolbars(out) {
+  out.querySelectorAll('.diagram-wrap').forEach(wrap => {
+    // Only mermaid wraps (not plantuml <img> wraps)
+    const svgEl = wrap.querySelector('svg');
+    if (!svgEl) return;
+    if (wrap.querySelector('.dl-toolbar')) return; // already added
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'dl-toolbar';
+
+    const btnSVG = document.createElement('button');
+    btnSVG.className = 'dl-btn';
+    btnSVG.textContent = 'SVG';
+    btnSVG.title = 'SVGとしてダウンロード';
+    btnSVG.onclick = () => downloadMermaidSVG(svgEl);
+
+    const btnPNG = document.createElement('button');
+    btnPNG.className = 'dl-btn';
+    btnPNG.textContent = 'PNG';
+    btnPNG.title = 'PNGとしてダウンロード';
+    btnPNG.onclick = () => downloadMermaidPNG(svgEl);
+
+    toolbar.appendChild(btnSVG);
+    toolbar.appendChild(btnPNG);
+    wrap.appendChild(toolbar);
+  });
+}
+
+function addKatexToolbars(out) {
+  // Wrap each .katex-display in a .katex-display-wrap and add toolbar
+  out.querySelectorAll('.katex-display').forEach(kd => {
+    if (kd.parentElement.classList.contains('katex-display-wrap')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'katex-display-wrap';
+    kd.parentNode.insertBefore(wrap, kd);
+    wrap.appendChild(kd);
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'dl-toolbar';
+
+    const btnSVG = document.createElement('button');
+    btnSVG.className = 'dl-btn';
+    btnSVG.textContent = 'SVG';
+    btnSVG.title = 'SVGとしてダウンロード';
+    btnSVG.onclick = () => downloadKatexSVG(kd);
+
+    toolbar.appendChild(btnSVG);
+    wrap.appendChild(toolbar);
+  });
+}
+
+// ── Download helpers ──
+
+function getSVGString(svgEl) {
+  // Clone so we can add xmlns etc without touching the live DOM
+  const clone = svgEl.cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  // Inline computed styles for fonts (basic)
+  clone.style.background = 'white';
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + clone.outerHTML;
+}
+
+function downloadMermaidSVG(svgEl) {
+  const str = getSVGString(svgEl);
+  dl(new Blob([str], {type: 'image/svg+xml'}), 'diagram.svg');
+}
+
+function downloadMermaidPNG(svgEl) {
+  const str = getSVGString(svgEl);
+  const blob = new Blob([str], {type: 'image/svg+xml'});
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  const w = svgEl.viewBox.baseVal.width || svgEl.getBoundingClientRect().width || 800;
+  const h = svgEl.viewBox.baseVal.height || svgEl.getBoundingClientRect().height || 600;
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    const scale = 2; // retina
+    canvas.width = w * scale;
+    canvas.height = h * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(scale, scale);
+    ctx.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    canvas.toBlob(b => dl(b, 'diagram.png'), 'image/png');
+  };
+  img.src = url;
+}
+
+function downloadKatexSVG(katexDisplayEl) {
+  // KaTeX renders an inner <svg> for the math; grab it
+  const svgEl = katexDisplayEl.querySelector('svg');
+  if (svgEl) {
+    downloadMermaidSVG(svgEl);
+    return;
+  }
+  // Fallback: wrap the HTML in a foreign-object SVG
+  const html = katexDisplayEl.innerHTML;
+  const w = katexDisplayEl.scrollWidth + 20;
+  const h = katexDisplayEl.scrollHeight + 20;
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+  <foreignObject width="100%" height="100%">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="padding:10px;">${html}</div>
+  </foreignObject>
+</svg>`;
+  dl(new Blob([svg], {type:'image/svg+xml'}), 'formula.svg');
 }
 
 function scheduleRender(){
